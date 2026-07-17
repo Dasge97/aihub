@@ -76,7 +76,12 @@ function extractSpeech(result: unknown): SpeechExtract {
   return {
     text: typeof b.text === "string" ? b.text : "",
     language: typeof b.language === "string" ? b.language : null,
-    duration: typeof b.duration === "number" ? b.duration : null,
+    duration:
+      typeof b.duration === "number"
+        ? b.duration
+        : typeof b.duration_s === "number"
+          ? b.duration_s
+          : null,
     segments: Array.isArray(b.segments)
       ? (b.segments as SpeechExtract["segments"])
       : [],
@@ -97,8 +102,31 @@ function cosine(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-// ---------- selección de modelos (checkboxes) ----------
+// ---------- utilidades UI ----------
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!text) return null;
+  return (
+    <button
+      type="button"
+      className="btn-secondary !py-1 !text-xs"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // clipboard puede estar bloqueado; se ignora en silencio
+        }
+      }}
+    >
+      {copied ? "Copiado ✓" : "Copiar"}
+    </button>
+  );
+}
+
+/** Selección de modelos (checkboxes). */
 function ModelPicker({
   models,
   selected,
@@ -153,6 +181,14 @@ type SpeechJob = {
   detail: JobDetail | null;
 };
 
+type Media = { file: File; url: string; source: "file" | "mic" };
+
+const RUN_LABEL: Record<string, string> = {
+  embeddings: "Generar embeddings",
+  ocr: "Reconocer texto",
+  speech: "Transcribir",
+};
+
 export function Playground() {
   const { toastError } = useToast();
   const caps = useApi<{ capabilities: Capability[] }>(
@@ -177,13 +213,6 @@ export function Playground() {
     [cap]
   );
   const [op, setOp] = useState("");
-  useEffect(() => {
-    setOp(ops[0] ?? "");
-    setSelected([]);
-    setResults(null);
-    setSpeechJobs(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [capId]);
 
   const [selected, setSelected] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
@@ -193,9 +222,32 @@ export function Playground() {
   const [texts, setTexts] = useState("");
   const [task, setTask] = useState<"passage" | "query">("passage");
 
-  // ocr / speech
-  const [file, setFile] = useState<File | null>(null);
+  // ocr / speech: fichero seleccionado (subido o grabado) con su preview
+  const [media, setMedia] = useState<Media | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function setMediaFile(file: File | null, source: "file" | "mic") {
+    setMedia((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return file ? { file, url: URL.createObjectURL(file), source } : null;
+    });
+  }
+  function clearMedia() {
+    setMedia((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+    if (fileRef.current) fileRef.current.value = "";
+  }
+  // limpiar preview al desmontar
+  useEffect(() => {
+    return () => {
+      setMedia((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return null;
+      });
+    };
+  }, []);
 
   // speech jobs + polling
   const [speechJobs, setSpeechJobs] = useState<SpeechJob[] | null>(null);
@@ -234,6 +286,16 @@ export function Playground() {
           ? "speech"
           : "otro";
 
+  // al cambiar de capacidad, resetear todo
+  useEffect(() => {
+    setOp(ops[0] ?? "");
+    setSelected([]);
+    setResults(null);
+    setSpeechJobs(null);
+    clearMedia();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capId]);
+
   async function run() {
     if (!cap || selected.length === 0) return;
     setRunning(true);
@@ -251,9 +313,9 @@ export function Playground() {
         );
         setResults(res.results);
       } else {
-        if (!file) return;
+        if (!media) return;
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", media.file);
         form.append(
           "request",
           JSON.stringify({
@@ -295,7 +357,15 @@ export function Playground() {
   const canRun =
     selected.length > 0 &&
     !running &&
-    (kind === "embeddings" ? textList.length > 0 : file !== null);
+    (kind === "embeddings" ? textList.length > 0 : media !== null);
+
+  const hint: Record<string, string> = {
+    embeddings:
+      "Escribe uno o varios textos (uno por línea), elige modelos y genera sus vectores. Con 2+ textos verás la matriz de similitud.",
+    ocr: "Sube una imagen, elige modelos y extrae el texto.",
+    speech:
+      "Sube o graba un audio, elige modelos y pulsa Transcribir. La transcripción se procesa en segundo plano (unos segundos) y aparece más abajo.",
+  };
 
   return (
     <div>
@@ -348,6 +418,10 @@ export function Playground() {
           )}
         </div>
 
+        {kind !== "otro" && (
+          <p className="mt-3 text-xs text-zinc-500">{hint[kind]}</p>
+        )}
+
         <div className="mt-4">
           <label className="label">Modelos</label>
           <ModelPicker
@@ -369,40 +443,36 @@ export function Playground() {
               />
             </>
           )}
+
           {(kind === "ocr" || kind === "speech") && (
-            <>
-              <label className="label">
-                {kind === "ocr" ? "Imagen" : "Audio"}
-              </label>
-              <input
-                ref={fileRef}
-                type="file"
-                accept={kind === "ocr" ? "image/*" : "audio/*"}
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-sm file:text-zinc-200 hover:file:bg-zinc-600"
-              />
-              {kind === "speech" && (
-                <>
-                  <MicRecorder
-                    onRecorded={(f) => {
-                      setFile(f);
-                      if (fileRef.current) fileRef.current.value = "";
-                    }}
+            <div className="space-y-3">
+              <div>
+                <label className="label">
+                  {kind === "ocr" ? "Imagen" : "Audio"}
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept={kind === "ocr" ? "image/*" : "audio/*"}
+                    onChange={(e) => setMediaFile(e.target.files?.[0] ?? null, "file")}
+                    className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-sm file:text-zinc-200 hover:file:bg-zinc-600"
                   />
-                  {file && (
-                    <p className="mt-2 text-xs text-zinc-500">
-                      Audio listo: <span className="text-zinc-300">{file.name}</span>{" "}
-                      ({(file.size / 1024).toFixed(0)} KB)
-                    </p>
+                  {kind === "speech" && (
+                    <MicRecorder
+                      hasAudio={media?.source === "mic"}
+                      onRecorded={(f) => setMediaFile(f, "mic")}
+                    />
                   )}
-                  <p className="mt-1 text-xs text-zinc-600">
-                    Se ejecuta como job en segundo plano; el resultado se consulta
-                    automáticamente cada 3 s.
-                  </p>
-                </>
+                </div>
+              </div>
+
+              {media && (
+                <MediaPreview kind={kind} media={media} onClear={clearMedia} />
               )}
-            </>
+            </div>
           )}
+
           {kind === "otro" && (
             <p className="text-sm text-zinc-500">
               Esta capacidad no tiene interfaz de playground específica.
@@ -411,33 +481,90 @@ export function Playground() {
         </div>
 
         {kind !== "otro" && (
-          <button className="btn-primary mt-4" onClick={run} disabled={!canRun}>
-            {running ? <Spinner className="h-4 w-4 text-white" /> : "Ejecutar"}
-          </button>
+          <div className="mt-4 flex items-center gap-3">
+            <button className="btn-primary" onClick={run} disabled={!canRun}>
+              {running ? (
+                <Spinner className="h-4 w-4 text-white" />
+              ) : (
+                RUN_LABEL[kind] ?? "Ejecutar"
+              )}
+            </button>
+            {kind === "speech" && (
+              <span className="text-xs text-zinc-600">
+                {selected.length === 0
+                  ? "Elige al menos un modelo"
+                  : !media
+                    ? "Sube o graba un audio"
+                    : ""}
+              </span>
+            )}
+          </div>
         )}
       </Card>
 
-      {/* resultados embeddings */}
       {results && kind === "embeddings" && (
         <EmbeddingsResults results={results} texts={textList} />
       )}
-
-      {/* resultados ocr */}
       {results && kind === "ocr" && <OcrResults results={results} />}
-
-      {/* resultados speech */}
       {speechJobs && <SpeechResults jobs={speechJobs} />}
     </div>
   );
 }
 
+/** Vista previa del audio/imagen seleccionado, con botón de borrar. */
+function MediaPreview({
+  kind,
+  media,
+  onClear,
+}: {
+  kind: "ocr" | "speech";
+  media: Media;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
+      {kind === "speech" ? (
+        <audio controls src={media.url} className="h-9 max-w-full" />
+      ) : (
+        <img
+          src={media.url}
+          alt="previsualización"
+          className="max-h-32 rounded border border-zinc-800"
+        />
+      )}
+      <div className="min-w-0 text-xs text-zinc-500">
+        <div className="truncate text-zinc-300">
+          {media.file.name}
+          {media.source === "mic" && (
+            <span className="ml-2">
+              <Badge tone="accent">grabado</Badge>
+            </span>
+          )}
+        </div>
+        <div>{(media.file.size / 1024).toFixed(0)} KB</div>
+      </div>
+      <button
+        type="button"
+        className="btn-secondary !py-1 !text-xs text-red-400"
+        onClick={onClear}
+      >
+        Borrar
+      </button>
+    </div>
+  );
+}
+
 /** Grabación de audio desde el micrófono del navegador (MediaRecorder).
- * Entrega un File que se envía por el mismo flujo que un fichero subido.
- * Requiere contexto seguro (HTTPS o localhost). */
-function MicRecorder({ onRecorded }: { onRecorded: (file: File) => void }) {
+ * Entrega un File al padre. Requiere contexto seguro (HTTPS o localhost). */
+function MicRecorder({
+  onRecorded,
+  hasAudio,
+}: {
+  onRecorded: (file: File) => void;
+  hasAudio: boolean;
+}) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -476,10 +603,7 @@ function MicRecorder({ onRecorded }: { onRecorded: (file: File) => void }) {
         const type = rec.mimeType || "audio/webm";
         const ext = type.includes("ogg") ? "ogg" : "webm";
         const blob = new Blob(chunksRef.current, { type });
-        const file = new File([blob], `grabacion.${ext}`, { type });
-        if (url) URL.revokeObjectURL(url);
-        setUrl(URL.createObjectURL(blob));
-        onRecorded(file);
+        onRecorded(new File([blob], `grabacion.${ext}`, { type }));
       };
       recRef.current = rec;
       rec.start();
@@ -501,27 +625,19 @@ function MicRecorder({ onRecorded }: { onRecorded: (file: File) => void }) {
   const ss = String(seconds % 60).padStart(2, "0");
 
   return (
-    <div className="mt-3">
-      <div className="mb-1 text-xs uppercase tracking-wide text-zinc-600">
-        o graba desde el micrófono
-      </div>
-      <div className="flex items-center gap-3">
-        {!recording ? (
-          <button type="button" className="btn-secondary" onClick={start}>
-            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
-            Grabar
-          </button>
-        ) : (
-          <button type="button" className="btn-secondary" onClick={stop}>
-            <span className="mr-1.5 inline-block h-2.5 w-2.5 animate-pulse rounded-sm bg-red-500" />
-            Detener ({mm}:{ss})
-          </button>
-        )}
-        {url && !recording && (
-          <audio controls src={url} className="h-8" />
-        )}
-      </div>
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+    <div className="inline-flex flex-col gap-1">
+      {!recording ? (
+        <button type="button" className="btn-secondary" onClick={start}>
+          <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+          {hasAudio ? "Grabar de nuevo" : "Grabar micrófono"}
+        </button>
+      ) : (
+        <button type="button" className="btn-secondary" onClick={stop}>
+          <span className="mr-1.5 inline-block h-2.5 w-2.5 animate-pulse rounded-sm bg-red-500" />
+          Detener ({mm}:{ss})
+        </button>
+      )}
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }
@@ -591,7 +707,6 @@ function EmbeddingsResults({
                         </th>
                         {vecs.map((vb, j) => {
                           const sim = cosine(va, vb);
-                          // intensidad de fondo proporcional a la similitud
                           const alpha = Math.max(0, Math.min(1, (sim + 1) / 2));
                           return (
                             <td
@@ -635,7 +750,7 @@ function OcrResults({ results }: { results: PlaygroundResult[] }) {
               </span>
             }
           >
-            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
               <span>
                 Latencia: {r.latency_ms != null ? `${Math.round(r.latency_ms)} ms` : "—"}
               </span>
@@ -643,6 +758,9 @@ function OcrResults({ results }: { results: PlaygroundResult[] }) {
               <span>
                 Confianza media:{" "}
                 {ocr.avgConfidence != null ? `${(ocr.avgConfidence * 100).toFixed(1)} %` : "—"}
+              </span>
+              <span className="ml-auto">
+                <CopyButton text={ocr.text} />
               </span>
             </div>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300">
@@ -655,33 +773,51 @@ function OcrResults({ results }: { results: PlaygroundResult[] }) {
   );
 }
 
+const SPEECH_STATUS: Record<string, { label: string; tone: "zinc" | "accent" | "green" | "red" }> = {
+  queued: { label: "En cola", tone: "zinc" },
+  running: { label: "Transcribiendo…", tone: "accent" },
+  succeeded: { label: "Listo", tone: "green" },
+  failed: { label: "Error", tone: "red" },
+};
+
 function SpeechResults({ jobs }: { jobs: SpeechJob[] }) {
   return (
     <div className="mt-4 space-y-4">
+      <h2 className="text-sm font-semibold text-zinc-300">Transcripción</h2>
       {jobs.map((j) => {
         const done = ["succeeded", "failed"].includes(j.status);
+        const st = SPEECH_STATUS[j.status] ?? { label: j.status, tone: "zinc" as const };
         const sp = j.detail ? extractSpeech(j.detail.result) : null;
         return (
           <Card
             key={j.jobId || j.model}
             title={
               <span className="flex items-center gap-2">
-                {j.model} <StatusBadge status={j.status} />
+                {j.model}
+                <Badge tone={st.tone}>{st.label}</Badge>
                 {!done && <Spinner className="h-3.5 w-3.5" />}
               </span>
             }
           >
-            <div className="mb-2 text-xs text-zinc-500">
-              Job: <span className="font-mono">{j.jobId || "—"}</span>
-            </div>
-            {j.status === "failed" && (
-              <p className="text-sm text-red-400">
-                {j.detail?.error ?? "El job ha fallado."}
+            {!done && (
+              <p className="text-sm text-zinc-500">
+                Procesando el audio… el resultado aparecerá aquí automáticamente.
               </p>
             )}
+
+            {j.status === "failed" && (
+              <p className="text-sm text-red-400">
+                {typeof j.detail?.error === "string"
+                  ? j.detail.error
+                  : j.detail?.error
+                    ? JSON.stringify(j.detail.error)
+                    : "El job ha fallado."}
+              </p>
+            )}
+
             {j.status === "succeeded" && sp && (
               <>
-                <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
+                <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
                   <span>Idioma: {sp.language ?? "—"}</span>
                   <span>
                     Duración: {sp.duration != null ? `${sp.duration.toFixed(1)} s` : "—"}
@@ -689,27 +825,37 @@ function SpeechResults({ jobs }: { jobs: SpeechJob[] }) {
                   {j.detail?.latency_ms != null && (
                     <span>Latencia: {Math.round(j.detail.latency_ms)} ms</span>
                   )}
+                  <span className="ml-auto">
+                    <CopyButton text={sp.text} />
+                  </span>
                 </div>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300">
+
+                <div className="label">Texto transcrito</div>
+                <div className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm leading-relaxed text-zinc-100">
                   {sp.text || "(sin texto)"}
-                </pre>
+                </div>
+
                 {sp.segments.length > 0 && (
-                  <div className="mt-3">
-                    <div className="label">Segmentos</div>
-                    <Table headers={["Inicio", "Fin", "Texto"]}>
-                      {sp.segments.map((s, i) => (
-                        <tr key={i}>
-                          <Td className="font-mono text-xs">
-                            {s.start != null ? `${s.start.toFixed(1)}s` : "—"}
-                          </Td>
-                          <Td className="font-mono text-xs">
-                            {s.end != null ? `${s.end.toFixed(1)}s` : "—"}
-                          </Td>
-                          <Td className="text-xs">{s.text ?? ""}</Td>
-                        </tr>
-                      ))}
-                    </Table>
-                  </div>
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">
+                      Ver {sp.segments.length} segmentos con marcas de tiempo
+                    </summary>
+                    <div className="mt-2">
+                      <Table headers={["Inicio", "Fin", "Texto"]}>
+                        {sp.segments.map((s, i) => (
+                          <tr key={i}>
+                            <Td className="font-mono text-xs">
+                              {s.start != null ? `${s.start.toFixed(1)}s` : "—"}
+                            </Td>
+                            <Td className="font-mono text-xs">
+                              {s.end != null ? `${s.end.toFixed(1)}s` : "—"}
+                            </Td>
+                            <Td className="text-xs">{s.text ?? ""}</Td>
+                          </tr>
+                        ))}
+                      </Table>
+                    </div>
+                  </details>
                 )}
               </>
             )}
