@@ -33,6 +33,11 @@ expone a las aplicaciones del ecosistema mediante una API común organizada por
 | D10 | Compose + Traefik (flujo CodeHive), monorepo | Un nodo; k8s sería coste sin beneficio. El diseño es portable a más nodos cambiando URLs internas, no código | Kubernetes; multi-repo |
 | D11 | Pesos de modelos en volumen `/models` (descarga huggingface-hub), nunca en la imagen Docker | Imágenes ligeras, builds rápidos, actualizar modelo ≠ rebuild | Hornear pesos en imágenes |
 | D12 | Claves API `ah_…` hasheadas (SHA-256), scopes por capacidad, rate limit por clave | Suficiente para apps internas propias | OAuth/JWT entre apps propias (sobreingeniería) |
+| D13 | OCR por defecto: RapidOCR (modelos PP-OCRv4 sobre onnxruntime) | Mismos modelos que PaddleOCR con ~la mitad de RAM e imagen mucho menor; sin dependencia de paddlepaddle | Paquete PaddleOCR completo (puede añadirse como adaptador experimental) |
+| D14 | Modelos iniciales: `e5-small` (multilingual-e5-small, default embeddings), `minilm-l6`, `ppocr-v4`, `whisper-small` int8 (default speech), `whisper-base` | Variantes pequeñas por la restricción de RAM (D7); e5 es multilingüe (es/ca/en) | bge-m3, NLLB… (≥2 GB por modelo) |
+| D15 | El panel llama a `/api/*` y su propio nginx lo proxya al controller | Sin CORS, misma configuración en local y producción | Panel llamando al controller cross-origin |
+| D16 | Caché de pesos unificada: `HF_HOME=/models/hf` compartido entre controller y servicios | La descarga desde el panel y la carga en el servicio usan la misma caché | Caché por framework/servicio (descargas duplicadas) |
+| D17 | Webhooks de jobs sin firma en v1 | Consumidores propios sobre HTTPS; se añadirá HMAC si hay terceros | Firma HMAC desde el día 1 |
 
 ## 3. Arquitectura general
 

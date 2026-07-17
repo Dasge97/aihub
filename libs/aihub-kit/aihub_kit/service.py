@@ -141,6 +141,8 @@ def create_app(service_dir: Path) -> FastAPI:
 
     @app.post("/models/{alias}/load")
     async def load_model(alias: str):
+        # carga explícita desde el panel: no debe operar con config cacheada
+        await state["config"].refresh(force=True)
         mstate = await _resolve(alias)
         await state["manager"].ensure_loaded(mstate.spec.alias)
         return mstate.snapshot()
