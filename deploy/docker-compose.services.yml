@@ -1,12 +1,24 @@
 # Servicios de capacidad. Se levantan con:
 #   docker compose -f docker-compose.yml -f docker-compose.services.yml up -d
 # El controller los arranca/para después vía docker (activar/desactivar en el panel).
+
+# Límites comunes: en un servidor compartido sin swap, una inferencia sin capar
+# hilos puede provocar una tormenta de reclamo de memoria que tumba la máquina
+# entera (visto en producción el 2026-07-17: load average >300).
+x-ml-limits: &ml-limits
+  OMP_NUM_THREADS: "2"
+  OPENBLAS_NUM_THREADS: "2"
+  MKL_NUM_THREADS: "2"
+  TOKENIZERS_PARALLELISM: "false"
+  MEMORY_MARGIN_MB: "1024"
+
 services:
   svc-embeddings:
     build: { context: .., dockerfile: services/embeddings/Dockerfile }
     image: aihub-svc-embeddings
     container_name: aihub-svc-embeddings
     environment:
+      <<: *ml-limits
       DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
       DATA_DIR: /data
       MODELS_DIR: /models
@@ -27,6 +39,7 @@ services:
     image: aihub-svc-ocr
     container_name: aihub-svc-ocr
     environment:
+      <<: *ml-limits
       DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
       DATA_DIR: /data
       MODELS_DIR: /models
@@ -47,6 +60,7 @@ services:
     image: aihub-svc-speech
     container_name: aihub-svc-speech
     environment:
+      <<: *ml-limits
       DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
       DATA_DIR: /data
       MODELS_DIR: /models
