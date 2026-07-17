@@ -1,0 +1,64 @@
+# Servicios de capacidad. Se levantan con:
+#   docker compose -f docker-compose.yml -f docker-compose.services.yml up -d
+# El controller los arranca/para después vía docker (activar/desactivar en el panel).
+services:
+  svc-embeddings:
+    build: { context: .., dockerfile: services/embeddings/Dockerfile }
+    image: aihub-svc-embeddings
+    container_name: aihub-svc-embeddings
+    environment:
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      SERVICE_URL: http://svc-embeddings:8000
+      SERVICE_CONTAINER: aihub-svc-embeddings
+    volumes:
+      - data:/data
+      - models:/models
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+    networks: [aihub]
+
+  svc-ocr:
+    build: { context: .., dockerfile: services/ocr/Dockerfile }
+    image: aihub-svc-ocr
+    container_name: aihub-svc-ocr
+    environment:
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      SERVICE_URL: http://svc-ocr:8000
+      SERVICE_CONTAINER: aihub-svc-ocr
+    volumes:
+      - data:/data
+      - models:/models
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 2500m
+    cpus: 3
+    networks: [aihub]
+
+  svc-speech:
+    build: { context: .., dockerfile: services/speech/Dockerfile }
+    image: aihub-svc-speech
+    container_name: aihub-svc-speech
+    environment:
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      SERVICE_URL: http://svc-speech:8000
+      SERVICE_CONTAINER: aihub-svc-speech
+      JOB_CONCURRENCY: "1"
+    volumes:
+      - data:/data
+      - models:/models
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 2500m
+    cpus: 3
+    networks: [aihub]

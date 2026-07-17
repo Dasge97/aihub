@@ -1,0 +1,21 @@
+capability: ocr
+title: Reconocimiento óptico de caracteres
+mode: mixed
+default_model: ppocr-v4
+routes:
+  - path: /v1/ocr
+    op: recognize
+    mode: auto          # imagen ⇒ sync, PDF ⇒ async (lo decide el gateway)
+    content: multipart
+    max_upload_mb: 50
+    timeout_s: 120
+models:
+  - alias: ppocr-v4
+    model_id: PP-OCRv4 (RapidOCR/onnxruntime)
+    adapter: adapters.rapidocr_adapter:RapidOcrAdapter
+    version: "4"
+    framework: onnxruntime
+    est_ram_mb: 900
+    idle_unload_s: 600
+    params:
+      pdf_render_scale: 2.0   # ~144 dpi

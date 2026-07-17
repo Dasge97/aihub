@@ -1,0 +1,9 @@
+# Desarrollo local: expone puertos en localhost.
+#   docker compose -f docker-compose.yml -f docker-compose.services.yml -f docker-compose.local.yml up -d
+services:
+  gateway:
+    ports: ["8090:8000"]
+  controller:
+    ports: ["8081:8000"]
+  panel:
+    ports: ["8082:80"]

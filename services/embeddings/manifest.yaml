@@ -1,0 +1,29 @@
+capability: embeddings
+title: Embeddings de texto
+mode: sync
+default_model: e5-small
+routes:
+  - path: /v1/embeddings
+    op: embed
+    mode: sync
+    content: json
+    timeout_s: 120
+models:
+  - alias: e5-small
+    model_id: intfloat/multilingual-e5-small
+    adapter: adapters.st_adapter:SentenceTransformersAdapter
+    version: "1.0"
+    framework: sentence-transformers
+    est_ram_mb: 700
+    idle_unload_s: 900
+    params:
+      query_prefix: "query: "
+      passage_prefix: "passage: "
+  - alias: minilm-l6
+    model_id: sentence-transformers/all-MiniLM-L6-v2
+    adapter: adapters.st_adapter:SentenceTransformersAdapter
+    version: "1.0"
+    framework: sentence-transformers
+    est_ram_mb: 350
+    idle_unload_s: 900
+    params: {}

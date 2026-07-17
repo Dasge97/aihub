@@ -1,0 +1,55 @@
+# Capacidad: embeddings — v1
+# Modo: sync
+capability: embeddings
+version: v1
+mode: sync
+operations:
+  embed:
+    method: POST
+    path: /v1/embeddings
+    request:
+      type: object
+      required: [texts]
+      properties:
+        texts:
+          type: array
+          items: { type: string, maxLength: 8192 }
+          minItems: 1
+          maxItems: 256
+          description: Textos a vectorizar.
+        model:
+          type: string
+          default: default
+          description: Alias del modelo (ver _conventions.md).
+        task:
+          type: string
+          enum: [passage, query]
+          default: passage
+          description: >
+            Uso previsto del vector. Los modelos que distinguen consulta/documento
+            (familia E5) aplican el prefijo correspondiente; el resto lo ignoran.
+        normalize:
+          type: boolean
+          default: true
+          description: Devolver vectores L2-normalizados.
+    response:
+      type: object
+      required: [embeddings, dimensions, model, model_id]
+      properties:
+        embeddings:
+          type: array
+          items: { type: array, items: { type: number } }
+          description: Un vector por texto, en el mismo orden.
+        dimensions: { type: integer }
+        model: { type: string, description: Alias resuelto. }
+        model_id: { type: string, description: Informativo, no estable. }
+        usage:
+          type: object
+          properties:
+            texts: { type: integer }
+        extras: { type: object }
+notes: |
+  - La dimensión depende del modelo activo. Las apps que persistan vectores deben
+    guardar `dimensions` + `model_id` junto a los vectores: cambiar el modelo default
+    invalida los vectores ya almacenados (re-indexado necesario). Esta es la única
+    capacidad donde el cambio de modelo tiene efecto de estado en los consumidores.

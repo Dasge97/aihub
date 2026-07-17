@@ -1,0 +1,70 @@
+# Capacidad: ocr — v1
+# Modo: mixto (imagen suelta = sync; PDF/multipágina = async)
+capability: ocr
+version: v1
+mode: mixed
+operations:
+  recognize:
+    method: POST
+    path: /v1/ocr
+    content_type: multipart/form-data
+    request:
+      fields:
+        file: Imagen (png/jpg/webp) o PDF. Excluyente con request.url.
+        request:
+          type: object
+          properties:
+            url: { type: string, description: Alternativa a subir fichero. }
+            model: { type: string, default: default }
+            languages:
+              type: array
+              items: { type: string }
+              default: [es, en]
+              description: Pista de idiomas (ISO 639-1). El motor puede ignorarla.
+            detail:
+              type: string
+              enum: [text, lines, words]
+              default: lines
+              description: Granularidad de la salida.
+            webhook_url: { type: string, description: Solo aplica en modo async. }
+    dispatch: |
+      Imagen ⇒ sync (200). PDF ⇒ async (202 + job_id), resultado por página.
+    response:
+      type: object
+      required: [text, pages, model, model_id]
+      properties:
+        text:
+          type: string
+          description: Todo el texto plano concatenado en orden de lectura.
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              page: { type: integer, description: 1-based. }
+              width: { type: integer }
+              height: { type: integer }
+              lines:
+                type: array
+                items:
+                  type: object
+                  required: [text, confidence, bbox]
+                  properties:
+                    text: { type: string }
+                    confidence: { type: number, description: 0..1 }
+                    bbox:
+                      type: array
+                      description: "[x1,y1,x2,y2] en píxeles de la página."
+                      items: { type: number }
+                    words:
+                      type: array
+                      description: Solo si detail=words y el motor lo soporta.
+                      items: { type: object }
+        model: { type: string }
+        model_id: { type: string }
+        extras: { type: object }
+notes: |
+  - bbox siempre rectángulo alineado a ejes [x1,y1,x2,y2]; si el motor devuelve
+    polígonos, el adaptador calcula el rectángulo envolvente y publica el polígono
+    original en extras.
+  - Confianza siempre normalizada a 0..1.

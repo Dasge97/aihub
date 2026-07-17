@@ -1,0 +1,31 @@
+capability: speech
+title: Transcripción de voz (speech-to-text)
+mode: async
+default_model: whisper-small
+routes:
+  - path: /v1/transcribe
+    op: transcribe
+    mode: async
+    content: multipart
+    max_upload_mb: 200
+models:
+  - alias: whisper-small
+    model_id: Systran/faster-whisper-small
+    adapter: adapters.whisper_adapter:FasterWhisperAdapter
+    version: small
+    framework: faster-whisper (ctranslate2, int8)
+    est_ram_mb: 1200
+    idle_unload_s: 600
+    params:
+      compute_type: int8
+      beam_size: 5
+  - alias: whisper-base
+    model_id: Systran/faster-whisper-base
+    adapter: adapters.whisper_adapter:FasterWhisperAdapter
+    version: base
+    framework: faster-whisper (ctranslate2, int8)
+    est_ram_mb: 600
+    idle_unload_s: 600
+    params:
+      compute_type: int8
+      beam_size: 5

@@ -1,0 +1,56 @@
+# Capacidad: speech (speech-to-text) — v1
+# Modo: async siempre (en CPU la transcripción es lenta)
+capability: speech
+version: v1
+mode: async
+operations:
+  transcribe:
+    method: POST
+    path: /v1/transcribe
+    content_type: multipart/form-data
+    request:
+      fields:
+        file: Audio (wav/mp3/m4a/ogg/opus/flac) o vídeo con pista de audio. Excluyente con request.url.
+        request:
+          type: object
+          properties:
+            url: { type: string }
+            model: { type: string, default: default }
+            language:
+              type: string
+              description: ISO 639-1. Si se omite, autodetección.
+            task:
+              type: string
+              enum: [transcribe, translate]
+              default: transcribe
+              description: translate = traducir a inglés (capacidad del propio Whisper).
+            timestamps:
+              type: string
+              enum: [segment, none]
+              default: segment
+            webhook_url: { type: string }
+    response: 202 + job_id  # resultado vía GET /v1/jobs/{id}
+    result:
+      type: object
+      required: [text, language, segments, duration_s, model, model_id]
+      properties:
+        text: { type: string, description: Transcripción completa. }
+        language: { type: string, description: Idioma detectado/forzado (ISO 639-1). }
+        language_confidence: { type: number }
+        duration_s: { type: number }
+        segments:
+          type: array
+          items:
+            type: object
+            required: [start, end, text]
+            properties:
+              start: { type: number, description: Segundos. }
+              end: { type: number }
+              text: { type: string }
+              confidence: { type: number }
+        model: { type: string }
+        model_id: { type: string }
+        extras: { type: object }
+notes: |
+  - Límite de fichero por defecto: 200 MB (audio largo). Configurable.
+  - Un único worker de transcripción por defecto (serialización por RAM/CPU).

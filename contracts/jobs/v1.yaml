@@ -1,0 +1,31 @@
+# Transversal: jobs — v1
+capability: jobs
+version: v1
+operations:
+  get:
+    method: GET
+    path: /v1/jobs/{job_id}
+    response:
+      type: object
+      required: [job_id, capability, status, created_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        capability: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+        result: { type: object, nullable: true, description: Contrato de la capacidad. }
+        error:
+          type: object
+          nullable: true
+          properties:
+            code: { type: string }
+            message: { type: string }
+  list:
+    method: GET
+    path: /v1/jobs
+    query:
+      status: { type: string, optional: true }
+      limit: { type: integer, default: 50, max: 200 }
+    response: Lista de jobs de la API key llamante (sin result; solo metadatos).

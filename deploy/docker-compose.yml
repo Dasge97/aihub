@@ -1,0 +1,73 @@
+name: aihub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aihub-postgres
+    environment:
+      POSTGRES_DB: aihub
+      POSTGRES_USER: aihub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aihub"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    mem_limit: 512m
+    networks: [aihub]
+
+  gateway:
+    build: { context: .., dockerfile: gateway/Dockerfile }
+    image: aihub-gateway
+    container_name: aihub-gateway
+    environment:
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+    volumes:
+      - data:/data
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 512m
+    networks: [aihub]
+
+  controller:
+    build: { context: .., dockerfile: controller/Dockerfile }
+    image: aihub-controller
+    container_name: aihub-controller
+    environment:
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    volumes:
+      - data:/data
+      - models:/models
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 512m
+    networks: [aihub]
+
+  panel:
+    build: { context: ../panel, dockerfile: Dockerfile }
+    image: aihub-panel
+    container_name: aihub-panel
+    depends_on: [controller]
+    restart: unless-stopped
+    mem_limit: 128m
+    networks: [aihub]
+
+volumes:
+  pgdata:
+  data:
+  models:
+
+networks:
+  aihub:
+    name: aihub
