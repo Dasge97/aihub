@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import secrets
 from contextlib import asynccontextmanager
 
 import httpx
@@ -14,7 +13,7 @@ from aihub_kit.db import create_pool, migrate
 from aihub_kit.errors import ApiError, install_error_handlers
 from aihub_kit.logging import setup_logging
 
-from . import dockerctl
+from . import adminauth, dockerctl
 from .janitor import janitor_loop
 
 log = logging.getLogger("aihub.controller")
@@ -22,12 +21,19 @@ state: dict = {}
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
+# Rutas públicas (sin auth): el propio login.
+PUBLIC_PATHS = {"/admin/login"}
+
 
 async def admin_auth(request: Request) -> None:
+    if request.url.path in PUBLIC_PATHS:
+        return
     header = request.headers.get("authorization", "")
     token = header.removeprefix("Bearer ").strip()
-    if not ADMIN_TOKEN or not secrets.compare_digest(token, ADMIN_TOKEN):
-        raise ApiError(401, "unauthorized", "Token de administrador inválido")
+    identity = await adminauth.resolve(state["pool"], token)
+    if identity is None:
+        raise ApiError(401, "unauthorized", "Sesión no válida")
+    request.state.identity = identity
 
 
 @asynccontextmanager
@@ -38,6 +44,7 @@ async def lifespan(app: FastAPI):
     pool = await create_pool()
     await migrate(pool)
     state.update(pool=pool, client=httpx.AsyncClient())
+    await adminauth.seed_admin(pool)
     janitor = asyncio.create_task(janitor_loop(pool))
     log.info("controller arrancado")
     yield
@@ -70,9 +77,35 @@ from . import routes_data  # noqa: E402  (necesita `app`/`state` ya definidos)
 app.include_router(routes_data.router)
 
 
+@app.post("/admin/login")
+async def login(body: dict):
+    return await adminauth.login(
+        state["pool"], body.get("username", ""), body.get("password", "")
+    )
+
+
+@app.post("/admin/logout")
+async def logout(request: Request):
+    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    await adminauth.logout(state["pool"], token)
+    return {"ok": True}
+
+
+@app.post("/admin/change-password")
+async def change_password(request: Request, body: dict):
+    identity = request.state.identity
+    await adminauth.change_password(
+        state["pool"], identity["user_id"],
+        body.get("current", ""), body.get("new", ""),
+    )
+    return {"ok": True}
+
+
 @app.get("/admin/me")
-async def me():
-    return {"ok": True, "component": "controller"}
+async def me(request: Request):
+    identity = getattr(request.state, "identity", {})
+    return {"ok": True, "component": "controller",
+            "username": identity.get("username", "")}
 
 
 @app.get("/admin/overview")

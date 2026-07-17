@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { clearToken } from "../api";
+import { logout as apiLogout } from "../api";
 import {
   IconClock,
   IconCpu,
@@ -27,8 +27,8 @@ const NAV = [
 export function Layout() {
   const navigate = useNavigate();
 
-  function logout() {
-    clearToken();
+  async function logout() {
+    await apiLogout();
     navigate("/login");
   }
 

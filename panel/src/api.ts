@@ -83,6 +83,25 @@ export const api = {
     request<T>("POST", path, undefined, form),
 };
 
+/** Inicia sesión con usuario y contraseña y guarda el token de sesión. */
+export async function login(username: string, password: string): Promise<void> {
+  const res = await request<{ token: string }>("POST", "/admin/login", {
+    username,
+    password,
+  });
+  setToken(res.token);
+}
+
+/** Cierra la sesión en el servidor (revoca el token) y localmente. */
+export async function logout(): Promise<void> {
+  try {
+    await api.post("/admin/logout");
+  } catch {
+    // aunque falle en el servidor, limpiamos localmente
+  }
+  clearToken();
+}
+
 /** Construye un query string omitiendo valores vacíos. */
 export function qs(params: Record<string, string | number | undefined | null>): string {
   const parts = Object.entries(params)

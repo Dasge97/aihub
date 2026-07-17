@@ -382,10 +382,24 @@ export function Playground() {
                 className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-sm file:text-zinc-200 hover:file:bg-zinc-600"
               />
               {kind === "speech" && (
-                <p className="mt-1 text-xs text-zinc-600">
-                  Se ejecuta como job en segundo plano; el resultado se consulta
-                  automáticamente cada 3 s.
-                </p>
+                <>
+                  <MicRecorder
+                    onRecorded={(f) => {
+                      setFile(f);
+                      if (fileRef.current) fileRef.current.value = "";
+                    }}
+                  />
+                  {file && (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Audio listo: <span className="text-zinc-300">{file.name}</span>{" "}
+                      ({(file.size / 1024).toFixed(0)} KB)
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Se ejecuta como job en segundo plano; el resultado se consulta
+                    automáticamente cada 3 s.
+                  </p>
+                </>
               )}
             </>
           )}
@@ -413,6 +427,101 @@ export function Playground() {
 
       {/* resultados speech */}
       {speechJobs && <SpeechResults jobs={speechJobs} />}
+    </div>
+  );
+}
+
+/** Grabación de audio desde el micrófono del navegador (MediaRecorder).
+ * Entrega un File que se envía por el mismo flujo que un fichero subido.
+ * Requiere contexto seguro (HTTPS o localhost). */
+function MicRecorder({ onRecorded }: { onRecorded: (file: File) => void }) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (recRef.current && recRef.current.state !== "inactive") {
+        recRef.current.stop();
+      }
+      recRef.current?.stream.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  async function start() {
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Tu navegador no permite grabar audio (o no es un contexto seguro).");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/ogg")
+          ? "audio/ogg"
+          : "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const type = rec.mimeType || "audio/webm";
+        const ext = type.includes("ogg") ? "ogg" : "webm";
+        const blob = new Blob(chunksRef.current, { type });
+        const file = new File([blob], `grabacion.${ext}`, { type });
+        if (url) URL.revokeObjectURL(url);
+        setUrl(URL.createObjectURL(blob));
+        onRecorded(file);
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } catch {
+      setError("No se pudo acceder al micrófono. Revisa los permisos del navegador.");
+    }
+  }
+
+  function stop() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    recRef.current?.stop();
+    setRecording(false);
+  }
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-xs uppercase tracking-wide text-zinc-600">
+        o graba desde el micrófono
+      </div>
+      <div className="flex items-center gap-3">
+        {!recording ? (
+          <button type="button" className="btn-secondary" onClick={start}>
+            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+            Grabar
+          </button>
+        ) : (
+          <button type="button" className="btn-secondary" onClick={stop}>
+            <span className="mr-1.5 inline-block h-2.5 w-2.5 animate-pulse rounded-sm bg-red-500" />
+            Detener ({mm}:{ss})
+          </button>
+        )}
+        {url && !recording && (
+          <audio controls src={url} className="h-8" />
+        )}
+      </div>
+      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
     </div>
   );
 }

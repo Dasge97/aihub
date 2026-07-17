@@ -74,7 +74,7 @@ export function Ajustes() {
     return <p className="text-sm text-red-400">{settings.error}</p>;
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageTitle title="Ajustes" />
       <Card className="max-w-xl">
         <div className="space-y-4">
@@ -99,6 +99,82 @@ export function Ajustes() {
           </button>
         </div>
       </Card>
+      <ChangePassword />
     </div>
+  );
+}
+
+function ChangePassword() {
+  const { toast, toastError } = useToast();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (next !== repeat) {
+      toastError(new Error("La nueva contraseña y su repetición no coinciden"));
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/admin/change-password", { current, new: next });
+      toast("Contraseña actualizada", "success");
+      setCurrent("");
+      setNext("");
+      setRepeat("");
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="max-w-xl">
+      <h2 className="mb-4 text-sm font-semibold text-zinc-200">Cambiar contraseña</h2>
+      <div className="space-y-4">
+        <div>
+          <label className="label" htmlFor="pw-current">Contraseña actual</label>
+          <input
+            id="pw-current"
+            className="input !w-64"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="pw-new">Nueva contraseña (mín. 8)</label>
+          <input
+            id="pw-new"
+            className="input !w-64"
+            type="password"
+            autoComplete="new-password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="pw-repeat">Repite la nueva contraseña</label>
+          <input
+            id="pw-repeat"
+            className="input !w-64"
+            type="password"
+            autoComplete="new-password"
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value)}
+          />
+        </div>
+        <button
+          className="btn-primary"
+          onClick={submit}
+          disabled={saving || !current || next.length < 8}
+        >
+          {saving ? <Spinner className="h-4 w-4 text-white" /> : "Cambiar contraseña"}
+        </button>
+      </div>
+    </Card>
   );
 }
