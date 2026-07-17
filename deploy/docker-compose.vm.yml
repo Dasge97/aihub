@@ -1,0 +1,21 @@
+# Overlay para la VM dedicada (host01): Caddy como entrada pública con TLS
+# automático de Let's Encrypt. Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.services.yml \
+#                  -f docker-compose.vm.yml up -d --build
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: aihub-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [panel]
+    restart: unless-stopped
+    mem_limit: 256m
+    networks: [aihub]
+
+volumes:
+  caddy-data:

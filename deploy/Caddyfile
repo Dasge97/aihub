@@ -1,0 +1,7 @@
+aihub.code-hive.space {
+	encode gzip
+	reverse_proxy panel:80
+	request_body {
+		max_size 200MB
+	}
+}
