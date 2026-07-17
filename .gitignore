@@ -7,3 +7,4 @@ dist/
 *.local
 .playwright-mcp/
 deploy/.env
+README_DEPLOY.md

@@ -1,30 +1,19 @@
-# Plantilla de configuración dinámica de Traefik (file provider) para el servidor
-# CodeHive. Copiar al directorio dinámico de Traefik ajustando dominios y la red.
-# Los contenedores aihub-gateway y aihub-panel deben estar unidos a la red que usa
-# Traefik (añadirla como red externa en un override de compose del servidor).
+# Plantilla de configuración dinámica de Traefik (file provider).
+# En el servidor CodeHive el fichero real es
+# infrastructure/traefik/dynamic/deployment-aihub.yml y apunta al host_port
+# del panel (único servicio público del stack: sirve SPA + /api + /v1).
 http:
   routers:
-    aihub-api:
-      rule: Host(`api.aihub.EXAMPLE.COM`)
-      entryPoints: [websecure]
-      tls: { certResolver: letsencrypt }
-      service: aihub-gateway
-      middlewares: [aihub-upload-limit]
-    aihub-panel:
-      rule: Host(`aihub.EXAMPLE.COM`)
-      entryPoints: [websecure]
-      tls: { certResolver: letsencrypt }
-      service: aihub-panel
-
-  middlewares:
-    aihub-upload-limit:
-      buffering:
-        maxRequestBodyBytes: 209715200   # 200 MB (audio largo)
+    deploy-aihub:
+      rule: Host(`aihub.code-hive.space`)
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: deploy-aihub
 
   services:
-    aihub-gateway:
+    deploy-aihub:
       loadBalancer:
-        servers: [{ url: "http://aihub-gateway:8000" }]
-    aihub-panel:
-      loadBalancer:
-        servers: [{ url: "http://aihub-panel:80" }]
+        servers:
+          - url: http://127.0.0.1:HOST_PORT
