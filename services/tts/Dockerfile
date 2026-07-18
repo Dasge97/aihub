@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /srv
 COPY libs/aihub-kit /srv/libs/aihub-kit
 RUN pip install --no-cache-dir /srv/libs/aihub-kit \
-    && pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir "coqui-tts>=0.24" "piper-tts==1.2.0"
+    && pip install --no-cache-dir torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir "coqui-tts>=0.24" "piper-tts==1.2.0" \
+       "transformers==4.56.1"   # coqui-tts 0.27 no soporta aún transformers 5.x
 COPY services/tts /srv/app
 WORKDIR /srv/app
 EXPOSE 8000
