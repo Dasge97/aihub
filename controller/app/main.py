@@ -1,12 +1,17 @@
 import asyncio
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 import psutil
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
+_AUDIO_NAME = re.compile(r"^[0-9a-fA-F-]{36}\.(wav|mp3|ogg)$")
 
 from aihub_kit.config import settings
 from aihub_kit.db import create_pool, migrate
@@ -99,6 +104,17 @@ async def change_password(request: Request, body: dict):
         body.get("current", ""), body.get("new", ""),
     )
     return {"ok": True}
+
+
+@app.get("/admin/audio/{name}")
+async def get_audio(name: str):
+    """Sirve un audio generado (TTS) para el playground."""
+    if not _AUDIO_NAME.match(name):
+        raise ApiError(404, "not_found", "Audio no encontrado")
+    path = Path(settings.data_dir) / "outputs" / name
+    if not path.is_file():
+        raise ApiError(404, "not_found", "Audio no encontrado o expirado")
+    return FileResponse(path)
 
 
 @app.get("/admin/me")
@@ -240,7 +256,19 @@ async def playground(cap_id: str, request: Request):
     try:
         for alias in aliases:  # secuencial a propósito: no cargar 2 modelos a la vez
             if run_async:
-                job_id = await enqueue(pool, cap_id, op, dict(payload), None,
+                job_payload = dict(payload)
+                # cada job necesita su propia copia del fichero: el runner lo borra
+                # al terminar y varios modelos compartirían el mismo si no.
+                if file_path:
+                    import shutil
+                    import uuid as _uuid
+                    from pathlib import Path
+
+                    src = Path(file_path)
+                    dup = src.with_name(f"pg-{_uuid.uuid4()}{src.suffix}")
+                    shutil.copy(src, dup)
+                    job_payload["file_path"] = str(dup)
+                job_id = await enqueue(pool, cap_id, op, job_payload, None,
                                        model_alias=alias, source="playground")
                 results.append({"model": alias, "job_id": job_id, "status": "queued"})
                 continue
@@ -270,7 +298,8 @@ async def playground(cap_id: str, request: Request):
                 None if entry["status"] < 400 else "playground_error",
             )
     finally:
-        if file_path and not run_async:
+        # el original siempre se borra aquí (en async se trabajó sobre copias)
+        if file_path:
             from pathlib import Path
             Path(file_path).unlink(missing_ok=True)
     return {"results": results}

@@ -187,7 +187,15 @@ const RUN_LABEL: Record<string, string> = {
   embeddings: "Generar embeddings",
   ocr: "Reconocer texto",
   speech: "Transcribir",
+  tts: "Generar voz",
 };
+
+/** Nombre de fichero de audio a partir de un audio_url (/v1/audio/<name>). */
+function audioName(audioUrl: unknown): string | null {
+  if (typeof audioUrl !== "string") return null;
+  const name = audioUrl.split("/").pop() || "";
+  return /^[0-9a-fA-F-]{36}\.(wav|mp3|ogg)$/.test(name) ? name : null;
+}
 
 export function Playground() {
   const { toastError } = useToast();
@@ -277,14 +285,16 @@ export function Playground() {
     return () => clearInterval(t);
   }, [speechJobs]);
 
-  const kind: "embeddings" | "ocr" | "speech" | "otro" =
+  const kind: "embeddings" | "ocr" | "speech" | "tts" | "otro" =
     capId.includes("embed")
       ? "embeddings"
       : capId.includes("ocr")
         ? "ocr"
-        : capId.includes("speech") || capId.includes("stt") || capId.includes("audio")
-          ? "speech"
-          : "otro";
+        : capId.includes("tts")
+          ? "tts"
+          : capId.includes("speech") || capId.includes("stt") || capId.includes("audio")
+            ? "speech"
+            : "otro";
 
   // al cambiar de capacidad, resetear todo
   useEffect(() => {
@@ -295,6 +305,17 @@ export function Playground() {
     clearMedia();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capId]);
+
+  function asJobs(results: PlaygroundResult[]) {
+    setSpeechJobs(
+      results.map((r) => ({
+        model: r.model,
+        jobId: r.job_id ?? "",
+        status: String(r.status ?? "queued"),
+        detail: null,
+      }))
+    );
+  }
 
   async function run() {
     if (!cap || selected.length === 0) return;
@@ -312,7 +333,26 @@ export function Playground() {
           { op, payload: { texts: textList, task }, models: selected }
         );
         setResults(res.results);
+      } else if (kind === "tts") {
+        // texto a voz: texto obligatorio, voz de referencia opcional; asíncrono
+        const form = new FormData();
+        if (media) form.append("file", media.file);
+        form.append(
+          "request",
+          JSON.stringify({
+            op,
+            payload: { text: texts, language: "es" },
+            models: selected,
+            as_job: true,
+          })
+        );
+        const res = await api.postForm<{ results: PlaygroundResult[] }>(
+          `/admin/playground/${cap.id}`,
+          form
+        );
+        asJobs(res.results);
       } else {
+        // ocr / speech: fichero obligatorio
         if (!media) return;
         const form = new FormData();
         form.append("file", media.file);
@@ -329,18 +369,8 @@ export function Playground() {
           `/admin/playground/${cap.id}`,
           form
         );
-        if (kind === "speech") {
-          setSpeechJobs(
-            res.results.map((r) => ({
-              model: r.model,
-              jobId: r.job_id ?? "",
-              status: String(r.status ?? "queued"),
-              detail: null,
-            }))
-          );
-        } else {
-          setResults(res.results);
-        }
+        if (kind === "speech") asJobs(res.results);
+        else setResults(res.results);
       }
     } catch (err) {
       toastError(err);
@@ -357,7 +387,11 @@ export function Playground() {
   const canRun =
     selected.length > 0 &&
     !running &&
-    (kind === "embeddings" ? textList.length > 0 : media !== null);
+    (kind === "embeddings"
+      ? textList.length > 0
+      : kind === "tts"
+        ? texts.trim().length > 0
+        : media !== null);
 
   const hint: Record<string, string> = {
     embeddings:
@@ -365,65 +399,100 @@ export function Playground() {
     ocr: "Sube una imagen, elige modelos y extrae el texto.",
     speech:
       "Sube o graba un audio, elige modelos y pulsa Transcribir. La transcripción se procesa en segundo plano (unos segundos) y aparece más abajo.",
+    tts: "Escribe un texto, elige modelos y genera la voz. Opcional: sube o graba una muestra de voz para clonarla (solo el modelo XTTS clona).",
   };
+
+  const KIND_ICON: Record<string, string> = {
+    embeddings: "◈",
+    ocr: "🔤",
+    speech: "🎙",
+    tts: "🔊",
+    otro: "▪",
+  };
+
+  const runHint =
+    selected.length === 0
+      ? "Elige al menos un modelo"
+      : kind === "embeddings" && textList.length === 0
+        ? "Escribe algún texto"
+        : kind === "tts" && !texts.trim()
+          ? "Escribe el texto a locutar"
+          : (kind === "ocr" || kind === "speech") && !media
+            ? kind === "ocr"
+              ? "Sube una imagen"
+              : "Sube o graba un audio"
+            : "";
 
   return (
     <div>
       <PageTitle title="Playground" />
 
-      <Card>
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="label">Capacidad</label>
-            <select
-              className="input !w-auto"
-              value={capId}
-              onChange={(e) => setCapId(e.target.value)}
+      {/* pestañas de capacidad (menú superior) */}
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-zinc-800">
+        {capList.map((c) => {
+          const k = c.id.includes("embed")
+            ? "embeddings"
+            : c.id.includes("ocr")
+              ? "ocr"
+              : c.id.includes("tts")
+                ? "tts"
+                : "speech";
+          const active = c.id === capId;
+          return (
+            <button
+              key={c.id}
+              onClick={() => setCapId(c.id)}
+              className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                active
+                  ? "border-accent-500 text-accent-400"
+                  : "border-transparent text-zinc-500 hover:text-zinc-300"
+              }`}
             >
-              {capList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title} ({c.id})
-                </option>
-              ))}
-            </select>
+              <span aria-hidden>{KIND_ICON[k]}</span>
+              {c.title}
+            </button>
+          );
+        })}
+      </div>
+
+      <Card>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-xs text-zinc-500">{hint[kind] ?? ""}</p>
+          <div className="flex shrink-0 gap-3">
+            {ops.length > 1 && (
+              <div>
+                <label className="label">Operación</label>
+                <select
+                  className="input !w-auto"
+                  value={op}
+                  onChange={(e) => setOp(e.target.value)}
+                >
+                  {ops.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {kind === "embeddings" && (
+              <div>
+                <label className="label">Tipo de texto</label>
+                <select
+                  className="input !w-auto"
+                  value={task}
+                  onChange={(e) => setTask(e.target.value as "passage" | "query")}
+                >
+                  <option value="passage">documento</option>
+                  <option value="query">consulta</option>
+                </select>
+              </div>
+            )}
           </div>
-          {ops.length > 1 && (
-            <div>
-              <label className="label">Operación</label>
-              <select
-                className="input !w-auto"
-                value={op}
-                onChange={(e) => setOp(e.target.value)}
-              >
-                {ops.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {kind === "embeddings" && (
-            <div>
-              <label className="label">Task</label>
-              <select
-                className="input !w-auto"
-                value={task}
-                onChange={(e) => setTask(e.target.value as "passage" | "query")}
-              >
-                <option value="passage">passage</option>
-                <option value="query">query</option>
-              </select>
-            </div>
-          )}
         </div>
 
-        {kind !== "otro" && (
-          <p className="mt-3 text-xs text-zinc-500">{hint[kind]}</p>
-        )}
-
         <div className="mt-4">
-          <label className="label">Modelos</label>
+          <label className="label">Modelos (marca uno o varios para comparar)</label>
           <ModelPicker
             models={models.data?.models ?? []}
             selected={selected}
@@ -442,6 +511,43 @@ export function Playground() {
                 placeholder={"El gato duerme en el sofá\nUn felino descansa en el sillón"}
               />
             </>
+          )}
+
+          {kind === "tts" && (
+            <div className="space-y-3">
+              <div>
+                <label className="label">Texto a locutar</label>
+                <textarea
+                  className="input h-24"
+                  value={texts}
+                  onChange={(e) => setTexts(e.target.value)}
+                  placeholder="Escribe aquí lo que quieres que diga la voz…"
+                />
+              </div>
+              <div>
+                <label className="label">
+                  Voz de referencia — opcional, para clonar (solo XTTS)
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="audio/*"
+                    onChange={(e) => setMediaFile(e.target.files?.[0] ?? null, "file")}
+                    className="block text-sm text-zinc-400 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-sm file:text-zinc-200 hover:file:bg-zinc-600"
+                  />
+                  <MicRecorder
+                    hasAudio={media?.source === "mic"}
+                    onRecorded={(f) => setMediaFile(f, "mic")}
+                  />
+                </div>
+                {media && (
+                  <div className="mt-3">
+                    <MediaPreview kind="speech" media={media} onClear={clearMedia} />
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {(kind === "ocr" || kind === "speech") && (
@@ -481,7 +587,7 @@ export function Playground() {
         </div>
 
         {kind !== "otro" && (
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-5 flex items-center gap-3 border-t border-zinc-800 pt-4">
             <button className="btn-primary" onClick={run} disabled={!canRun}>
               {running ? (
                 <Spinner className="h-4 w-4 text-white" />
@@ -489,15 +595,7 @@ export function Playground() {
                 RUN_LABEL[kind] ?? "Ejecutar"
               )}
             </button>
-            {kind === "speech" && (
-              <span className="text-xs text-zinc-600">
-                {selected.length === 0
-                  ? "Elige al menos un modelo"
-                  : !media
-                    ? "Sube o graba un audio"
-                    : ""}
-              </span>
-            )}
+            {runHint && <span className="text-xs text-zinc-600">{runHint}</span>}
           </div>
         )}
       </Card>
@@ -506,7 +604,8 @@ export function Playground() {
         <EmbeddingsResults results={results} texts={textList} />
       )}
       {results && kind === "ocr" && <OcrResults results={results} />}
-      {speechJobs && <SpeechResults jobs={speechJobs} />}
+      {speechJobs && kind === "speech" && <SpeechResults jobs={speechJobs} />}
+      {speechJobs && kind === "tts" && <TtsResults jobs={speechJobs} />}
     </div>
   );
 }
@@ -858,6 +957,68 @@ function SpeechResults({ jobs }: { jobs: SpeechJob[] }) {
                   </details>
                 )}
               </>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function TtsResults({ jobs }: { jobs: SpeechJob[] }) {
+  return (
+    <div className="mt-4 space-y-4">
+      <h2 className="text-sm font-semibold text-zinc-300">Voz generada</h2>
+      {jobs.map((j) => {
+        const done = ["succeeded", "failed"].includes(j.status);
+        const st = SPEECH_STATUS[j.status] ?? { label: j.status, tone: "zinc" as const };
+        const res = asRecord(j.detail?.result) ?? {};
+        const name = audioName(res.audio_url);
+        const src = name ? `/api/admin/audio/${name}` : null;
+        const cloned = asRecord(res.extras)?.cloned === true;
+        return (
+          <Card
+            key={j.jobId || j.model}
+            title={
+              <span className="flex items-center gap-2">
+                {j.model}
+                <Badge tone={st.tone}>{st.label}</Badge>
+                {cloned && <Badge tone="accent">voz clonada</Badge>}
+                {!done && <Spinner className="h-3.5 w-3.5" />}
+              </span>
+            }
+          >
+            {!done && (
+              <p className="text-sm text-zinc-500">
+                Generando la voz… el audio aparecerá aquí automáticamente.
+              </p>
+            )}
+            {j.status === "failed" && (
+              <p className="text-sm text-red-400">
+                {typeof j.detail?.error === "string"
+                  ? j.detail.error
+                  : j.detail?.error
+                    ? JSON.stringify(j.detail.error)
+                    : "El job ha fallado."}
+              </p>
+            )}
+            {j.status === "succeeded" && src && (
+              <div className="flex flex-wrap items-center gap-4">
+                <audio controls src={src} className="h-10 max-w-full" />
+                <div className="text-xs text-zinc-500">
+                  {typeof res.duration_s === "number" && (
+                    <span>Duración: {res.duration_s.toFixed(1)} s · </span>
+                  )}
+                  <a href={src} download className="text-accent-400 hover:underline">
+                    Descargar
+                  </a>
+                </div>
+              </div>
+            )}
+            {j.status === "succeeded" && !src && (
+              <p className="text-sm text-red-400">
+                El job terminó pero no devolvió audio.
+              </p>
             )}
           </Card>
         );

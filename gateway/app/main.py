@@ -1,17 +1,22 @@
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from aihub_kit.config import settings
 from aihub_kit.db import create_pool, migrate
 from aihub_kit.errors import ApiError, install_error_handlers
 from aihub_kit.jobs import job_public_view
 from aihub_kit.logging import setup_logging
+
+# nombre de fichero de salida seguro: <uuid>.<ext> (evita path traversal)
+_AUDIO_NAME = re.compile(r"^[0-9a-fA-F-]{36}\.(wav|mp3|ogg)$")
 
 from .auth import authenticate, check_scope
 from .dispatch import RouteTable, build_payload, dispatch
@@ -65,6 +70,19 @@ async def health():
 async def capabilities(request: Request):
     await authenticate(request, state["pool"])
     return {"capabilities": await state["routes"].capabilities()}
+
+
+@app.get("/v1/audio/{name}")
+async def get_audio(request: Request, name: str):
+    """Descarga un fichero de audio generado (p. ej. por TTS). El id es un uuid
+    no adivinable; basta una clave API válida."""
+    await authenticate(request, state["pool"])
+    if not _AUDIO_NAME.match(name):
+        raise ApiError(404, "not_found", "Audio no encontrado")
+    path = Path(settings.data_dir) / "outputs" / name
+    if not path.is_file():
+        raise ApiError(404, "not_found", "Audio no encontrado o expirado")
+    return FileResponse(path)
 
 
 @app.get("/v1/jobs")

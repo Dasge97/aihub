@@ -1,0 +1,65 @@
+# Capacidad: tts (texto a voz / text-to-speech) — v1
+# Modo: auto (sync para modelos rápidos; async si se pide as_job o el modelo es pesado)
+capability: tts
+version: v1
+mode: mixed
+operations:
+  synthesize:
+    method: POST
+    path: /v1/tts
+    content_type: multipart/form-data   # request(JSON) + opcional file (voz de referencia)
+    request:
+      fields:
+        request:
+          type: object
+          required: [text]
+          properties:
+            text:
+              type: string
+              maxLength: 5000
+              description: Texto a locutar.
+            model: { type: string, default: default }
+            language:
+              type: string
+              default: es
+              description: Idioma del texto (ISO 639-1).
+            voice:
+              type: string
+              description: >
+                Voz predefinida del modelo (si la soporta). Se ignora cuando se
+                envía una voz de referencia para clonar.
+            format:
+              type: string
+              enum: [wav, mp3]
+              default: wav
+            as_job:
+              type: boolean
+              default: false
+              description: Forzar procesamiento asíncrono (recomendado para XTTS/textos largos).
+        file:
+          description: >
+            (Opcional) Audio de referencia para CLONAR la voz. Solo lo usan modelos
+            con clonación (XTTS-v2); con 6-15 s de voz limpia basta.
+    dispatch: |
+      Respuesta sync (200) con audio_url, salvo que as_job=true o el modelo sea
+      pesado ⇒ async (202 + job_id); el resultado del job trae el mismo audio_url.
+    response:
+      type: object
+      required: [audio_url, format, model, model_id]
+      properties:
+        audio_url:
+          type: string
+          description: >
+            Ruta para descargar el audio generado (GET con la misma clave API).
+            Ej. /v1/audio/<id>.wav. El fichero es efímero (TTL configurable).
+        format: { type: string }
+        sample_rate: { type: integer }
+        duration_s: { type: number }
+        model: { type: string }
+        model_id: { type: string }
+        extras: { type: object }
+notes: |
+  - La salida es un fichero de audio, no JSON con audio embebido: se descarga en
+    GET /v1/audio/<id>.<fmt> con la clave API. Se conserva según uploads_ttl_h.
+  - Clonación de voz: enviar `file` con una muestra de la voz objetivo. Aviso: el
+    modelo que clona (XTTS-v2) tiene licencia NO comercial (solo experimentación).

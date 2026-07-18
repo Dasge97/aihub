@@ -32,10 +32,12 @@ async def janitor_loop(pool: asyncpg.Pool, interval_s: int = 3600) -> None:
                 logs_days,
             )
             n_files = 0
-            uploads = Path(settings.data_dir) / "uploads"
-            if uploads.exists():
-                cutoff = time.time() - uploads_h * 3600
-                for f in uploads.iterdir():
+            cutoff = time.time() - uploads_h * 3600
+            for sub in ("uploads", "outputs"):
+                d = Path(settings.data_dir) / sub
+                if not d.exists():
+                    continue
+                for f in d.iterdir():
                     if f.is_file() and f.stat().st_mtime < cutoff:
                         f.unlink(missing_ok=True)
                         n_files += 1

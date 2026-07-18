@@ -1,0 +1,35 @@
+capability: tts
+title: Texto a voz (text-to-speech)
+mode: mixed
+default_model: piper-es
+routes:
+  - path: /v1/tts
+    op: synthesize
+    mode: auto          # sync por defecto; async si as_job=true (XTTS/textos largos)
+    content: multipart  # request JSON + fichero opcional (voz de referencia)
+    max_upload_mb: 25
+    timeout_s: 120
+models:
+  - alias: piper-es
+    model_id: rhasspy/piper-voices — es_ES-davefx-medium
+    adapter: adapters.piper_adapter:PiperAdapter
+    version: "1.0"
+    framework: piper (onnxruntime)
+    est_ram_mb: 300
+    idle_unload_s: 900
+    params:
+      # ruta del modelo dentro del repo HF rhasspy/piper-voices
+      hf_repo: rhasspy/piper-voices
+      voice_path: es/es_ES/davefx/medium/es_ES-davefx-medium.onnx
+  - alias: xtts-v2
+    model_id: coqui/XTTS-v2
+    adapter: adapters.xtts_adapter:XttsAdapter
+    version: "2.0.3"
+    framework: coqui-tts (torch, CPU)
+    est_ram_mb: 3200
+    idle_unload_s: 600
+    notes: >
+      Licencia NO comercial (Coqui CPML). Clona voz a partir de una muestra
+      (campo file). Lento en CPU: usar as_job=true.
+    params:
+      default_speaker: Claribel Dervla   # voz por defecto si no se envía muestra

@@ -8,6 +8,16 @@ from .config import settings
 from .errors import ApiError
 
 
+def new_output(ext: str = "wav") -> tuple[Path, str]:
+    """Crea una ruta de salida en el volumen compartido para un fichero generado
+    (p. ej. audio de TTS). Devuelve (ruta_absoluta, nombre). El nombre es un uuid
+    y lo sirven gateway/controller en /v1/audio/<nombre>."""
+    name = f"{uuid.uuid4()}.{ext.lstrip('.')}"
+    out_dir = Path(settings.data_dir) / "outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / name, name
+
+
 def fetch_input(payload: dict, max_mb: int = 200) -> tuple[Path, bool]:
     """Devuelve (ruta_local, es_temporal). Si el payload trae `url`, descarga al
     directorio de datos; si trae `file_path` (subido vía gateway), lo usa tal cual.

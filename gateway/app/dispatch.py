@@ -103,8 +103,8 @@ async def build_payload(request: Request, route: dict) -> dict:
         payload["file_path"] = str(dest)
         payload["filename"] = upload.filename
         payload["content_type"] = upload.content_type
-    if not payload.get("file_path") and not payload.get("url"):
-        raise ApiError(400, "invalid_request", "Falta el fichero ('file') o 'url'")
+    # Nota: no se exige fichero aquí. Cada servicio valida sus entradas (p. ej. OCR
+    # y speech requieren fichero/url; TTS acepta solo texto sin voz de referencia).
     return payload
 
 
@@ -112,6 +112,8 @@ def _is_async(route: dict, payload: dict) -> bool:
     if route["mode"] == "async":
         return True
     if route["mode"] == "auto":
+        if payload.get("as_job"):  # el cliente lo pide explícitamente (p. ej. XTTS)
+            return True
         name = (payload.get("filename") or payload.get("url") or "").lower()
         ctype = (payload.get("content_type") or "").lower()
         return name.endswith(".pdf") or ctype == "application/pdf"

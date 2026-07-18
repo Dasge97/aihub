@@ -76,3 +76,25 @@ services:
     mem_limit: 2500m
     cpus: 3
     networks: [aihub]
+
+  svc-tts:
+    build: { context: .., dockerfile: services/tts/Dockerfile }
+    image: aihub-svc-tts
+    container_name: aihub-svc-tts
+    environment:
+      <<: *ml-limits
+      DATABASE_URL: postgresql://aihub:${POSTGRES_PASSWORD:?}@postgres:5432/aihub
+      DATA_DIR: /data
+      MODELS_DIR: /models
+      SERVICE_URL: http://svc-tts:8000
+      SERVICE_CONTAINER: aihub-svc-tts
+      JOB_CONCURRENCY: "1"
+    volumes:
+      - data:/data
+      - models:/models
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 5g
+    cpus: 4
+    networks: [aihub]
