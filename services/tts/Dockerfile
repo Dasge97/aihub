@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /srv
 COPY libs/aihub-kit /srv/libs/aihub-kit
 RUN pip install --no-cache-dir /srv/libs/aihub-kit \
-    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir "coqui-tts>=0.24" "piper-tts==1.2.0"
 COPY services/tts /srv/app
 WORKDIR /srv/app
