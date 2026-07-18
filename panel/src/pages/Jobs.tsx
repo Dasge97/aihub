@@ -24,6 +24,18 @@ function fmtTs(ts: string | null): string {
   });
 }
 
+/** El error de un job puede ser null, una cadena o {code, message}. Lo pasa a texto
+ * (renderizar el objeto directamente rompía la página con el error #31 de React). */
+function errText(e: unknown): string {
+  if (!e) return "";
+  if (typeof e === "string") return e;
+  if (typeof e === "object") {
+    const o = e as { code?: string; message?: string };
+    return o.message ?? o.code ?? JSON.stringify(e);
+  }
+  return String(e);
+}
+
 const STATUSES = ["", "queued", "running", "succeeded", "failed"];
 
 export function Jobs() {
@@ -137,8 +149,8 @@ export function Jobs() {
                 <Td className="text-xs">
                   {j.latency_ms != null ? `${Math.round(j.latency_ms)} ms` : "—"}
                 </Td>
-                <Td className="max-w-[12rem] truncate text-xs text-red-400" >
-                  {j.error ?? ""}
+                <Td className="max-w-[12rem] truncate text-xs text-red-400">
+                  <span title={errText(j.error)}>{errText(j.error)}</span>
                 </Td>
               </tr>
             ))}
@@ -169,7 +181,7 @@ export function Jobs() {
           </div>
           {detail.error && (
             <p className="mb-3 rounded-md border border-red-900 bg-red-950/40 p-2 text-sm text-red-300">
-              {detail.error}
+              {errText(detail.error)}
             </p>
           )}
           <div className="label">Payload</div>

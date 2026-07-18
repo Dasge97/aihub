@@ -150,7 +150,8 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
-  error: string | null;
+  // el backend devuelve el error como { code, message }; se admite también cadena/null
+  error: { code?: string; message?: string } | string | null;
   model_alias: string | null;
   source: string | null;
   latency_ms: number | null;
