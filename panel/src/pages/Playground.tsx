@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, fetchObjectUrl } from "../api";
 import { Badge, StatusBadge } from "../components/Badge";
 import { Card } from "../components/Card";
 import { PageTitle } from "../components/Layout";
@@ -965,6 +965,53 @@ function SpeechResults({ jobs }: { jobs: SpeechJob[] }) {
   );
 }
 
+/** Descarga el audio con la sesión (las etiquetas <audio> nativas no envían el
+ * token) y lo reproduce desde memoria, con enlace de descarga. */
+function AudioResult({ name, durationS }: { name: string; durationS?: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let obj: string | null = null;
+    let alive = true;
+    fetchObjectUrl(`/admin/audio/${name}`)
+      .then((u) => {
+        if (alive) {
+          obj = u;
+          setUrl(u);
+        } else {
+          URL.revokeObjectURL(u);
+        }
+      })
+      .catch(() => alive && setError(true));
+    return () => {
+      alive = false;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+  }, [name]);
+
+  if (error)
+    return <p className="text-sm text-red-400">No se pudo cargar el audio.</p>;
+  if (!url)
+    return (
+      <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <Spinner className="h-4 w-4" /> Cargando audio…
+      </div>
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <audio controls src={url} className="h-10 max-w-full" />
+      <div className="text-xs text-zinc-500">
+        {typeof durationS === "number" && (
+          <span>Duración: {durationS.toFixed(1)} s · </span>
+        )}
+        <a href={url} download="voz.wav" className="text-accent-400 hover:underline">
+          Descargar
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function TtsResults({ jobs }: { jobs: SpeechJob[] }) {
   return (
     <div className="mt-4 space-y-4">
@@ -974,7 +1021,6 @@ function TtsResults({ jobs }: { jobs: SpeechJob[] }) {
         const st = SPEECH_STATUS[j.status] ?? { label: j.status, tone: "zinc" as const };
         const res = asRecord(j.detail?.result) ?? {};
         const name = audioName(res.audio_url);
-        const src = name ? `/api/admin/audio/${name}` : null;
         const cloned = asRecord(res.extras)?.cloned === true;
         return (
           <Card
@@ -1002,20 +1048,15 @@ function TtsResults({ jobs }: { jobs: SpeechJob[] }) {
                     : "El job ha fallado."}
               </p>
             )}
-            {j.status === "succeeded" && src && (
-              <div className="flex flex-wrap items-center gap-4">
-                <audio controls src={src} className="h-10 max-w-full" />
-                <div className="text-xs text-zinc-500">
-                  {typeof res.duration_s === "number" && (
-                    <span>Duración: {res.duration_s.toFixed(1)} s · </span>
-                  )}
-                  <a href={src} download className="text-accent-400 hover:underline">
-                    Descargar
-                  </a>
-                </div>
-              </div>
+            {j.status === "succeeded" && name && (
+              <AudioResult
+                name={name}
+                durationS={
+                  typeof res.duration_s === "number" ? res.duration_s : undefined
+                }
+              />
             )}
-            {j.status === "succeeded" && !src && (
+            {j.status === "succeeded" && !name && (
               <p className="text-sm text-red-400">
                 El job terminó pero no devolvió audio.
               </p>

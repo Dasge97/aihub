@@ -83,6 +83,24 @@ export const api = {
     request<T>("POST", path, undefined, form),
 };
 
+/** Descarga un recurso binario protegido (p. ej. audio generado) con la sesión y
+ * devuelve un object URL para usarlo en <audio>/<img>/<a download>. Necesario
+ * porque las etiquetas nativas no envían la cabecera Authorization. */
+export async function fetchObjectUrl(path: string): Promise<string> {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new ApiError(401, "unauthorized", "Sesión no válida");
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, "audio_error", "No se pudo cargar el recurso");
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
 /** Inicia sesión con usuario y contraseña y guarda el token de sesión. */
 export async function login(username: string, password: string): Promise<void> {
   const res = await request<{ token: string }>("POST", "/admin/login", {
